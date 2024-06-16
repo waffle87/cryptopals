@@ -1,0 +1,127 @@
+// https://cryptopals.com/sets/2/challenges/16
+#include "util/aes.h"
+#include "util/random.h"
+#include <assert.h>
+#include <string.h>
+
+/*
+ * in CBC mode, a 1-bit error in ciphertext block:
+ * completeley scrambles the error block & produces
+ * identical 1-bit error/edit in the next ciphertext.
+ *
+ * bit flipping attack is possible since there is no
+ * integrity and authentication on the data.
+ * see
+ * https://crypto.stackexchange.com/questions/66085/bit-flipping-attack-on-cbc-mode
+ */
+
+static unsigned char key[16], iv[16];
+
+static int oracle(const char *in, size_t in_len, unsigned char **out) {
+  assert(*out && in && in_len);
+  const char *prefix = "comment1=cooking%20MCs;userdata=";
+  const char *suffix = ";comment2=%20like%20a%20pound%20of%20bacon";
+  const size_t prefix_len = strlen(prefix);
+  const size_t suffix_len = strlen(suffix);
+  const size_t total_len = prefix_len + in_len + suffix_len;
+  unsigned char *buf = malloc(total_len);
+  if (buf == NULL) {
+    perror("malloc");
+    exit(1);
+  }
+  // setup encoding buffer
+  memcpy(buf, (unsigned char *)prefix, prefix_len);
+  memcpy(buf + prefix_len, (unsigned char *)in, in_len);
+  memcpy(buf + prefix_len + in_len, (unsigned char *)suffix, suffix_len);
+  *out = malloc(total_len + 16);
+  int encr_len = cbc_encrypt(buf, (int)total_len, key, iv, *out);
+  free(buf);
+  return encr_len;
+}
+
+static int check_admin(unsigned char *in, size_t in_len) {
+  unsigned char *out = malloc(in_len + 16);
+  int decr_len = cbc_decrypt(in, in_len, key, iv, out);
+  if (decr_len == -1) {
+    printf("decryption failed\n");
+    exit(1);
+  }
+  out[decr_len] = '\0'; // NULL-terminate to use 'strstr'
+  const char *needle = ";admin=true;";
+  return (strstr((char *)out, needle) != NULL) ? 1 : 0;
+}
+
+static void flip_msb(unsigned char *data) {
+  //(flips most significant bit)
+  *data ^= 0x80;
+}
+
+static size_t get_padding_size(unsigned char *in, size_t in_len) {
+  assert(in && in_len);
+  const size_t block_size = 16;
+  size_t res = block_size;
+  unsigned char *out = malloc(in_len + block_size);
+  size_t num_blocks = in_len / block_size + (in_len % block_size == 0 ? 0 : 1);
+  assert(num_blocks > 1);
+  unsigned char *second_last_block = in + (num_blocks - 2) * block_size;
+  for (uint i = 1; i < block_size; i++) {
+    flip_msb(&second_last_block[block_size - i - 1]);
+    int decr = cbc_decrypt(in, in_len, key, iv, out);
+    flip_msb(&second_last_block[block_size - i - 1]);
+    if (decr > -1) {
+      res = i;
+      break;
+    }
+  }
+  free(out);
+  return res;
+}
+
+static void tamper_ciphertext(unsigned char *in, size_t in_len) {
+  assert(in_len > 16);
+  size_t num_blocks = in_len / 16 + (in_len % 16 == 0 ? 0 : 1);
+  unsigned char *second_last_block = in + (num_blocks - 2) * 16;
+  unsigned char mask[16], want[16] = ";admin=true;\x04\x04\x04\x04";
+  for (uint i = 0; i < 16; i++) {
+    mask[i] = want[i] ^ 16;
+    second_last_block[i] ^= mask[i];
+  }
+}
+
+int main() {
+  unsigned char *encrypted;
+  init_with_random_bytes(key, 16);
+  memset(iv, 0, 16);
+  const char *test_str = "x";
+  int encr_len = oracle(test_str, strlen(test_str), &encrypted);
+  if (encr_len == -1) {
+    printf("encryption failed\n");
+    exit(1);
+  }
+  if (check_admin(encrypted, encr_len))
+    printf("admin access granted :^)\n");
+  else
+    printf("admin access denied D:\n");
+  size_t pad_size = get_padding_size(encrypted, encr_len);
+  size_t total_data_size = encr_len - pad_size;
+  size_t oracle_data_size = total_data_size - strlen(test_str);
+  size_t required_data_size = encr_len - oracle_data_size;
+  printf("padding size: %zu\ntotal data size: %zu\n"
+         "oracle data size: %zu\nrequired data size: %zu\n",
+         pad_size, total_data_size, oracle_data_size, required_data_size);
+  free(encrypted);
+  char *buf = malloc(required_data_size);
+  memset(buf, 'a', required_data_size);
+  encr_len = oracle(buf, required_data_size, &encrypted);
+  if (encr_len == -1) {
+    printf("encryption failed\n");
+    exit(1);
+  }
+  tamper_ciphertext(encrypted, encr_len);
+  if (check_admin(encrypted, encr_len))
+    printf("admin access granted :^)\n");
+  else
+    printf("admin access denied D:\n");
+  free(buf);
+  return 0;
+}
