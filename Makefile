@@ -1,7 +1,8 @@
 DEBUG ?= 0
 
-CFLAGS = -Wall -Wextra -Werror -Wno-unused -pedantic -Ilib
-LDFLAGS = 
+CFLAGS = -Wall -Wextra -Werror -Wno-unused -pedantic -Ilib \
+				 $(shell pkgconf --cflags openssl)
+LDFLAGS = $(shell pkgconf --libs openssl)
 
 ifeq ($(DEBUG),1)
     CFLAGS += -g -fsanitize=address
