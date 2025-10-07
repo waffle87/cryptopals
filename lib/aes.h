@@ -1,6 +1,7 @@
 #pragma once
 
 #include <openssl/aes.h>
+#include <openssl/evp.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
