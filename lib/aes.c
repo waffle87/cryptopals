@@ -131,3 +131,99 @@ struct bytes aes_decrypt_ecb(const unsigned char *data, size_t data_len,
   free(plaintext);
   return unpadded;
 }
+
+struct bytes aes_encrypt_cbc(char *data, const size_t data_len,
+                             const unsigned char *key, const size_t key_len,
+                             unsigned char *iv) {
+  if (key_len != 16 && key_len != 24 && key_len != 32)
+    return (struct bytes){NULL, 0};
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  const EVP_CIPHER *cipher;
+  switch (key_len) {
+  case 16:
+    EVP_aes_128_cbc();
+    break;
+  case 24:
+    EVP_aes_192_cbc();
+    break;
+  case 32:
+    EVP_aes_256_cbc();
+    break;
+  }
+  if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  struct bytes padded = pkcs7(data, data_len, AES_BLOCK_SIZE);
+  if (!padded.data) {
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  EVP_CIPHER_CTX_set_padding(ctx, 0);
+  unsigned char *ciphertext =
+      (unsigned char *)malloc(padded.len * sizeof(unsigned char));
+  int len;
+  if (EVP_EncryptUpdate(ctx, ciphertext, &len, padded.data, padded.len) != 1) {
+    free(padded.data);
+    free(ciphertext);
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  int ciphertext_len = len;
+  if (EVP_EncryptFinal_ex(ctx, ciphertext + len, &len) != 1) {
+    free(padded.data);
+    free(ciphertext);
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  ciphertext_len += len;
+  free(padded.data);
+  EVP_CIPHER_CTX_free(ctx);
+  return (struct bytes){ciphertext, ciphertext_len};
+}
+
+struct bytes aes_decrypt_cbc(unsigned char *data, size_t data_len,
+                             const unsigned char *key, size_t key_len,
+                             unsigned char *iv) {
+  if (key_len != 16 && key_len != 24 && key_len != 32)
+    return (struct bytes){NULL, 0};
+  if (!data_len || data_len % AES_BLOCK_SIZE)
+    return (struct bytes){NULL, 0};
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  const EVP_CIPHER *cipher;
+  switch (key_len) {
+  case 16:
+    cipher = EVP_aes_128_cbc();
+    break;
+  case 24:
+    cipher = EVP_aes_192_cbc();
+    break;
+  case 32:
+    cipher = EVP_aes_256_cbc();
+    break;
+  }
+  if (EVP_DecryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  EVP_CIPHER_CTX_set_padding(ctx, 0);
+  unsigned char *plaintext =
+      (unsigned char *)malloc(data_len * sizeof(unsigned char));
+  int len;
+  if (EVP_DecryptUpdate(ctx, plaintext, &len, data, data_len) != 1) {
+    free(plaintext);
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  int plaintext_len = len;
+  if (EVP_DecryptFinal_ex(ctx, plaintext + len, &len) != 1) {
+    free(plaintext);
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  plaintext_len += len;
+  EVP_CIPHER_CTX_free(ctx);
+  struct bytes res = pkcs7_validate_strip(plaintext, plaintext_len);
+  free(plaintext);
+  return res;
+}
