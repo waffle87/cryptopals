@@ -227,3 +227,10 @@ struct bytes aes_decrypt_cbc(unsigned char *data, size_t data_len,
   free(plaintext);
   return res;
 }
+
+char *aes_oracle(unsigned char *encoded, size_t block_size) {
+  if (!memcmp(encoded + block_size, encoded + block_size * 2, block_size))
+    return "ECB";
+  else
+    return "CBC";
+}
