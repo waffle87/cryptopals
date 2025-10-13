@@ -141,13 +141,13 @@ struct bytes aes_encrypt_cbc(char *data, const size_t data_len,
   const EVP_CIPHER *cipher;
   switch (key_len) {
   case 16:
-    EVP_aes_128_cbc();
+    cipher = EVP_aes_128_cbc();
     break;
   case 24:
-    EVP_aes_192_cbc();
+    cipher = EVP_aes_192_cbc();
     break;
   case 32:
-    EVP_aes_256_cbc();
+    cipher = EVP_aes_256_cbc();
     break;
   }
   if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
