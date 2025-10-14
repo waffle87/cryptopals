@@ -15,7 +15,23 @@ struct bytes pkcs7(const char *data, const size_t data_len, size_t block_size) {
 }
 
 struct bytes pkcs7_strip(unsigned char *data, size_t data_len) {
-  size_t padding = data[data_len - 1], res_len = data_len - padding;
+  if (!data_len)
+    return (struct bytes){NULL, 0};
+  size_t padding = data[data_len - 1];
+  if (!padding || padding > data_len) {
+    unsigned char *res =
+        (unsigned char *)malloc(data_len * sizeof(unsigned char));
+    memcpy(res, data, data_len);
+    return (struct bytes){res, data_len};
+  }
+  for (size_t i = data_len - padding; i < data_len; i++)
+    if (data[i] != padding) {
+      unsigned char *res =
+          (unsigned char *)malloc(data_len * sizeof(unsigned char));
+      memcpy(res, data, data_len);
+      return (struct bytes){res, data_len};
+    }
+  size_t res_len = data_len - padding;
   unsigned char *res = (unsigned char *)malloc(res_len * sizeof(unsigned char));
   memcpy(res, data, res_len);
   return (struct bytes){res, res_len};
