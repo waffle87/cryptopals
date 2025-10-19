@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 int xor (const unsigned char *s1, const size_t s1_len, const unsigned char *s2,
