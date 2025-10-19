@@ -56,8 +56,6 @@ struct bytes pkcs7_validate_strip(unsigned char *data, size_t data_len) {
 
 struct bytes aes_encrypt_ecb(char *data, const size_t data_len,
                              const unsigned char *key, const size_t key_len) {
-  if (key_len != 16 && key_len != 24 && key_len != 32)
-    return (struct bytes){NULL, 0};
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   const EVP_CIPHER *cipher;
   switch (key_len) {
@@ -70,6 +68,8 @@ struct bytes aes_encrypt_ecb(char *data, const size_t data_len,
   case 32:
     cipher = EVP_aes_256_ecb();
     break;
+  default:
+    return (struct bytes){NULL, 0};
   }
   if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, NULL) != 1) {
     EVP_CIPHER_CTX_free(ctx);
@@ -105,8 +105,6 @@ struct bytes aes_encrypt_ecb(char *data, const size_t data_len,
 
 struct bytes aes_decrypt_ecb(const unsigned char *data, size_t data_len,
                              const unsigned char *key, size_t key_len) {
-  if (key_len != 16 && key_len != 24 && key_len != 32)
-    return (struct bytes){NULL, 0};
   if (data_len == 0 || data_len % AES_BLOCK_SIZE)
     return (struct bytes){NULL, 0};
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -121,6 +119,8 @@ struct bytes aes_decrypt_ecb(const unsigned char *data, size_t data_len,
   case 32:
     cipher = EVP_aes_256_ecb();
     break;
+  default:
+    return (struct bytes){NULL, 0};
   }
   if (EVP_DecryptInit_ex(ctx, cipher, NULL, key, NULL) != 1) {
     EVP_CIPHER_CTX_free(ctx);
@@ -151,8 +151,6 @@ struct bytes aes_decrypt_ecb(const unsigned char *data, size_t data_len,
 struct bytes aes_encrypt_cbc(char *data, const size_t data_len,
                              const unsigned char *key, const size_t key_len,
                              unsigned char *iv) {
-  if (key_len != 16 && key_len != 24 && key_len != 32)
-    return (struct bytes){NULL, 0};
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
   const EVP_CIPHER *cipher;
   switch (key_len) {
@@ -165,6 +163,8 @@ struct bytes aes_encrypt_cbc(char *data, const size_t data_len,
   case 32:
     cipher = EVP_aes_256_cbc();
     break;
+  default:
+    return (struct bytes){NULL, 0};
   }
   if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
     EVP_CIPHER_CTX_free(ctx);
@@ -201,8 +201,6 @@ struct bytes aes_encrypt_cbc(char *data, const size_t data_len,
 struct bytes aes_decrypt_cbc(unsigned char *data, size_t data_len,
                              const unsigned char *key, size_t key_len,
                              unsigned char *iv) {
-  if (key_len != 16 && key_len != 24 && key_len != 32)
-    return (struct bytes){NULL, 0};
   if (!data_len || data_len % AES_BLOCK_SIZE)
     return (struct bytes){NULL, 0};
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
@@ -217,6 +215,8 @@ struct bytes aes_decrypt_cbc(unsigned char *data, size_t data_len,
   case 32:
     cipher = EVP_aes_256_cbc();
     break;
+  default:
+    return (struct bytes){NULL, 0};
   }
   if (EVP_DecryptInit_ex(ctx, cipher, NULL, key, iv) != 1) {
     EVP_CIPHER_CTX_free(ctx);
@@ -249,4 +249,57 @@ char *aes_oracle(unsigned char *encoded, size_t block_size) {
     return "ECB";
   else
     return "CBC";
+}
+
+union aes_ctr_counter {
+  unsigned char buf[AES_BLOCK_SIZE];
+  struct nonce_counter {
+    uint64_t nonce;
+    uint64_t counter;
+  } nc;
+};
+
+struct bytes aes_ctr(const unsigned char *data, size_t data_len,
+                     const unsigned char *key, size_t key_len,
+                     const uint64_t nonce) {
+  const EVP_CIPHER *cipher;
+  switch (key_len) {
+  case 16:
+    cipher = EVP_aes_128_ecb();
+    break;
+  case 24:
+    cipher = EVP_aes_192_ecb();
+    break;
+  case 32:
+    cipher = EVP_aes_256_ecb();
+    break;
+  default:
+    return (struct bytes){NULL, 0};
+  }
+  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+  if (EVP_EncryptInit_ex(ctx, cipher, NULL, key, NULL) != 1) {
+    EVP_CIPHER_CTX_free(ctx);
+    return (struct bytes){NULL, 0};
+  }
+  EVP_CIPHER_CTX_set_padding(ctx, 0);
+  unsigned char *decrypted =
+      (unsigned char *)calloc(data_len + 1, sizeof(unsigned char));
+  unsigned char keystream[AES_BLOCK_SIZE];
+  union aes_ctr_counter ctr_counter = {.nc = {.nonce = nonce, .counter = 0}};
+  for (size_t count = 0; count < data_len; count += AES_BLOCK_SIZE) {
+    size_t block_len =
+        (data_len - count < AES_BLOCK_SIZE) ? data_len - count : AES_BLOCK_SIZE;
+    ctr_counter.nc.counter = count / AES_BLOCK_SIZE;
+    int tmp_len = 0;
+    if (EVP_EncryptUpdate(ctx, keystream, &tmp_len, ctr_counter.buf,
+                          AES_BLOCK_SIZE) != 1) {
+      free(decrypted);
+      EVP_CIPHER_CTX_free(ctx);
+      return (struct bytes){NULL, 0};
+    }
+    for (size_t i = 0; i < block_len; i++)
+      decrypted[count + i] = data[count + i] ^ keystream[i];
+  }
+  EVP_CIPHER_CTX_free(ctx);
+  return (struct bytes){decrypted, data_len};
 }

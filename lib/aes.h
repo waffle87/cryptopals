@@ -30,3 +30,7 @@ struct bytes aes_decrypt_cbc(unsigned char *data, size_t data_len,
                              const unsigned char *key, size_t key_len,
                              unsigned char *iv);
 char *aes_oracle(unsigned char *encoded, size_t block_size);
+
+struct bytes aes_ctr(const unsigned char *data, size_t data_len,
+                     const unsigned char *key, size_t key_len,
+                     const uint64_t nonce);
